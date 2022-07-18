@@ -16,7 +16,7 @@ import pandas as pd
 from datetime import datetime
 from svgelements import Path, Polygon, SimpleLine, Line
 
-filename = '木鱼包滑坡-GPS-Rainfall.svg'
+filename = '树坪滑坡-Rainfall.svg'
 
 svgPath = os.path.join('./svg/', filename)
 
@@ -30,10 +30,10 @@ root = svg.getroot()
 
 # find the axes
 XLines = root.xpath(
-    "//*[local-name()='g' and @id='axis-x']/*")
+    "//*[local-name()='g' and contains(@id,'axis-x')]/*")
 X = []
 YLines = root.xpath(
-    "//*[local-name()='g' and @id='axis-y']/*")
+    "//*[local-name()='g' and contains(@id,'axis-y')]/*")
 Y = []
 
 # string to value
