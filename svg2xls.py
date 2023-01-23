@@ -8,6 +8,11 @@ By Ding Xia, cug.xia@gmail.com
 3. 对于纵坐标, 标记数据最小值和最大值, 以key_value做标记, 例如y_0, y_500, 将两个元素编组, 组名axis-y;
 4. 将导出的svg放到svg文件夹中, 并修改本代码中的filename;
 5. 执行本脚本, 数据将保存在xlsx文件夹中。
+
+曲线类型:
+- PL: polyline
+- S: symbol
+- H: histogram
 '''
 
 import os
@@ -16,7 +21,7 @@ import pandas as pd
 from datetime import datetime
 from svgelements import Path, Polygon, SimpleLine, Line
 
-filename = '树坪滑坡-Rainfall.svg'
+filename = 'Rainfall.svg'
 
 svgPath = os.path.join('./svg/', filename)
 
@@ -78,6 +83,10 @@ def parseAxis(e):
         bbox = Polygon(e.get('points')).bbox()
         xPixel = (bbox[0] + bbox[2])/2
         yPixel = (bbox[1] + bbox[3])/2
+    elif 'path' in e.tag:
+        bbox = Path(e.get('d')).bbox()
+        xPixel = (bbox[0] + bbox[2])/2
+        yPixel = (bbox[1] + bbox[3])/2
     else:
         raise Exception('Unexpect type of Axis: %s' % e.tag)
     label = label.upper()
@@ -119,26 +128,34 @@ def parserSymbol(e, type='CC'):
     '''
     e: element
     type: type of output: up, down, center; left, center, right; default: cc 
+          Y: L C R
+          X: D C U
+          Example: CC, LU, LD, LC; RD, RC, RU
     '''
     def getXyFromBbox(b, type='CC'):
         x, y = 0, 0
+        # for x
         match type[0].upper():
-            case 'D':
-                # low
-                x = max(b[0], b[2])
+            case 'L':
+                # left
+                x = min(b[0], b[2])
             case 'C':
                 # center
                 x = sum([b[0], b[2]])/2
+            case 'R':
+                # right
+                x = max(b[0], b[2])
+
+        match type[1].upper():
+            case 'D':
+                # down
+                y = max(b[1], b[3])
+            case 'C':
+                # center
+                y = sum([b[1], b[3]])/2
             case 'U':
                 # up
-                x = min(b[0], b[2])
-        match type[1].upper():
-            case 'L':
                 y = min(b[1], b[3])
-            case 'C':
-                y = sum([b[1], b[3]])/2
-            case 'R':
-                y = max(b[1], b[3])
         return (x, y)
     # check the tag, polygon or path
     x, y = 0, 0
@@ -148,6 +165,16 @@ def parserSymbol(e, type='CC'):
     elif 'path' in e.tag:
         p = Path(e.get('d'))
         bbox = p.bbox()
+    elif 'polyline':
+        XList = []
+        YList = []
+        for line in e.get('points').split(' '):
+            d = line.split(',')
+            if len(d) < 2:
+                continue
+            XList.append(float(d[0]))
+            YList.append(float(d[1]))
+        bbox = (min(XList),min(YList),max(XList),max(YList))
     elif 'line' in e.tag:
         p = SimpleLine(e.get('x1'), e.get('y1'), e.get('x2'), e.get('y2'))
         bbox = (p.x1, p.y1, p.x2, p.y2)
@@ -179,7 +206,7 @@ def parserHistogram(e):
     YList = []
     for s in e:
         # parser symbol to get the center data
-        x, y = parserSymbol(s, 'UC') # up center
+        x, y = parserSymbol(s, 'CU') # up center
         XList.append(x)
         YList.append(y)
     return (id, XList, YList)
@@ -193,7 +220,7 @@ def transformArrayfromPixelToT(line, pMin, pMax, tMin, tMax):
 
 
 # find all polyline
-PolyLines = root.xpath("//*[local-name()='polyline']")
+PolyLines = root.xpath("//*[local-name()='polyline' and contains(@id,'-PL')]")
 
 P = []
 for line in PolyLines:
