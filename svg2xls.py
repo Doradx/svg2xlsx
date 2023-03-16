@@ -13,15 +13,16 @@ By Ding Xia, cug.xia@gmail.com
 - PL: polyline
 - S: symbol
 - H: histogram
+
 '''
 
 import os
 import lxml.etree as ET
 import pandas as pd
 from datetime import datetime
-from svgelements import Path, Polygon, SimpleLine, Line
+from svgelements import Path, Polygon, SimpleLine, Line, Move
 
-filename = 'Rainfall.svg'
+filename = '谭家河201912-AGPS.svg'
 
 svgPath = os.path.join('./svg/', filename)
 
@@ -123,6 +124,16 @@ def parserPolyline(e):
         YList.append(float(d[1]))
     return (id, XList, YList)
 
+# Pathline
+def parserPathline(e):
+    id = e.get('id')
+    XList = []
+    YList = []
+    p = Path(e.get('d'))
+    for el in p._segments:
+        XList.append(el.end.x)
+        YList.append(el.end.y)
+    return (id, XList, YList)
 
 def parserSymbol(e, type='CC'):
     '''
@@ -219,12 +230,20 @@ def transformArrayfromPixelToT(line, pMin, pMax, tMin, tMax):
     return out
 
 
-# find all polyline
+# find all polyline (PL)
 PolyLines = root.xpath("//*[local-name()='polyline' and contains(@id,'-PL')]")
 
+# find all path line (PTL)
+PathLines = root.xpath("//*[local-name()='path' and contains(@id,'-PTL')]")
+
 P = []
+# find all polyline (PL)
 for line in PolyLines:
     P.append(parserPolyline(line))
+
+# find all pathline
+for line in PathLines:
+    P.append(parserPathline(line))
 
 # find all symbol lines
 SymbolLines = root.xpath("//*[local-name()='g' and contains(@id,'-S')]")
@@ -257,7 +276,9 @@ with pd.ExcelWriter(outputPath) as writer:
                 'x': n2s(Xt[i], X[0]['t']),
                 'y': n2s(Yt[i], Y[0]['t'])
             })
-        pd.DataFrame(out).to_excel(writer, sheet_name=p[0])
+        df = pd.DataFrame(out)
+        df = df.sort_values('xp', ascending=True)
+        df.to_excel(writer, sheet_name=p[0])
 
 print('Summary\r\nlines: %d' % (len(P)))
 for p in P:
