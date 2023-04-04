@@ -11,18 +11,27 @@ By Ding Xia, cug.xia@gmail.com
 
 曲线类型:
 - PL: polyline
+- PTL: path line
 - S: symbol
 - H: histogram
+
+坐标单位:
+- int
+- float
+- date
+- datetime
 
 '''
 
 import os
+import re
+from datetime import datetime
+
 import lxml.etree as ET
 import pandas as pd
-from datetime import datetime
-from svgelements import Path, Polygon, SimpleLine, Line, Move
+from svgelements import Line, Move, Path, Polygon, Rect, SimpleLine
 
-filename = '谭家河201912-AGPS.svg'
+filename = '白水河滑坡GPS_2010.01-2013.03.svg'
 
 svgPath = os.path.join('./svg/', filename)
 
@@ -54,7 +63,10 @@ def s2n(value, type='INT'):
         case 'DATE':
             value = datetime.strptime(value, '%Y-%m-%d').timestamp()
         case 'DATETIME':
-            value = datetime.strptime(value, '%Y-%m-%d %H:%M:%S').timestamp()
+            format = '%Y-%m-%d %H:%M:%S'
+            if '_' in value:
+                format = '%Y-%m-%d_%H:%M:%S'
+            value = datetime.strptime(value, format).timestamp()
     return value
 
 # value to string
@@ -73,8 +85,19 @@ def n2s(value, type='INT'):
     return value
 
 
-def parseAxis(e):
-    label, value = e.get('id').replace('_x0020_',' ').split('_')
+# parser x-y from p['points']
+def xyStr2xyList(xyStr):
+    xy = re.split('[, ]+', xyStr)
+    if len(xy) % 2:
+        raise Exception(
+            'The length of points is not correct, please check the svg file.')
+    XList = [float(x) for x in xy[0::2]]
+    YList = [float(y) for y in xy[1::2]]
+    return XList, YList
+
+
+def parserAxis(e):
+    label, value = e.get('id').replace('_x0020_', ' ').split('_', 1)
     xPixel = 0
     yPixel = 0
     if 'line' in e.tag:
@@ -103,30 +126,27 @@ def parseAxis(e):
 
 
 for x in XLines:
-    X.append(parseAxis(x))
+    X.append(parserAxis(x))
 
 for y in YLines:
-    Y.append(parseAxis(y))
+    Y.append(parserAxis(y))
 
 X = sorted(X, key=lambda x: x['xp'])
 Y = sorted(Y, key=lambda x: x['yp'])
 
 # Polyline
+
+
 def parserPolyline(e):
-    id = e.get('id')
-    XList = []
-    YList = []
-    for line in e.get('points').split(' '):
-        d = line.split(',')
-        if len(d) < 2:
-            continue
-        XList.append(float(d[0]))
-        YList.append(float(d[1]))
+    id = e.get('id').split('-', 1)[0]
+    XList, YList = xyStr2xyList(e.get('points'))
     return (id, XList, YList)
 
 # Pathline
+
+
 def parserPathline(e):
-    id = e.get('id')
+    id = e.get('id').split('-', 1)[0]
     XList = []
     YList = []
     p = Path(e.get('d'))
@@ -134,6 +154,7 @@ def parserPathline(e):
         XList.append(el.end.x)
         YList.append(el.end.y)
     return (id, XList, YList)
+
 
 def parserSymbol(e, type='CC'):
     '''
@@ -176,16 +197,12 @@ def parserSymbol(e, type='CC'):
     elif 'path' in e.tag:
         p = Path(e.get('d'))
         bbox = p.bbox()
-    elif 'polyline':
-        XList = []
-        YList = []
-        for line in e.get('points').split(' '):
-            d = line.split(',')
-            if len(d) < 2:
-                continue
-            XList.append(float(d[0]))
-            YList.append(float(d[1]))
-        bbox = (min(XList),min(YList),max(XList),max(YList))
+    elif 'rect' in e.tag:
+        p = Rect(e.get('x'), e.get('y'), e.get('width'), e.get('height'))
+        bbox = p.bbox()
+    elif 'polyline' in e.tag:
+        XList, YList = xyStr2xyList(e.get('points'))
+        bbox = (min(XList), min(YList), max(XList), max(YList))
     elif 'line' in e.tag:
         p = SimpleLine(e.get('x1'), e.get('y1'), e.get('x2'), e.get('y2'))
         bbox = (p.x1, p.y1, p.x2, p.y2)
@@ -199,11 +216,16 @@ def parserSymbol(e, type='CC'):
 
 def parserSymbolLine(e):
     id = e.get('id')
+    id_sp = id.split('-')
+    id = id_sp[0]
+    type = 'CC'
+    if len(id_sp) > 2:
+        type = id_sp[2].upper()
     XList = []
     YList = []
     for s in e:
         # parser symbol to get the center data
-        x, y = parserSymbol(s)
+        x, y = parserSymbol(s, type=type)
         XList.append(x)
         YList.append(y)
     return (id, XList, YList)
@@ -212,12 +234,12 @@ def parserSymbolLine(e):
 
 
 def parserHistogram(e):
-    id = e.get('id')
+    id = e.get('id').split('-', 1)[0]
     XList = []
     YList = []
     for s in e:
         # parser symbol to get the center data
-        x, y = parserSymbol(s, 'CU') # up center
+        x, y = parserSymbol(s, 'CU')  # up center
         XList.append(x)
         YList.append(y)
     return (id, XList, YList)
@@ -278,6 +300,7 @@ with pd.ExcelWriter(outputPath) as writer:
             })
         df = pd.DataFrame(out)
         df = df.sort_values('xp', ascending=True)
+        df = df.drop_duplicates()
         df.to_excel(writer, sheet_name=p[0])
 
 print('Summary\r\nlines: %d' % (len(P)))
